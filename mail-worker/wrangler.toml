@@ -6,18 +6,18 @@ keep_vars = true
 [observability]
 enabled = true
 
-#[[d1_databases]]
-#binding = "db"			#d1数据库绑定名默认不可修改
-#database_name = ""		#d1数据库名字
-#database_id = ""		#d1数据库id
+[[d1_databases]]
+binding = "db"			#d1数据库绑定名默认不可修改
+database_name = "email"		#d1数据库名字
+database_id = "148dc38e-8651-4fdc-98b7-1266b1cb96f5"		#d1数据库id
 
-#[[kv_namespaces]]
-#binding = "kv"			#kv绑定名默认不可修改
-#id = ""					#kv数据库id
+[[kv_namespaces]]
+binding = "kv"			#kv绑定名默认不可修改
+id = "14b8f45d626a49ccb330e9958878f30b"					#kv数据库id
 
-#[[r2_buckets]]
-#binding = "r2"			#r2对象存储绑定名默认不可修改
-#bucket_name = ""		#r2对象存储桶的名字
+[[r2_buckets]]
+binding = "r2"			#r2对象存储绑定名默认不可修改
+bucket_name = "email"		#r2对象存储桶的名字
 
 #[[send_email]]
 #name = "email"			#CF发件, 配置后优先使用
@@ -36,12 +36,12 @@ crons = ["0 16 * * *"]	#每天晚上12点执行每日任务,刷新分析缓存
 
 
 [vars]
-#ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
-#analysis_cache = false			#是否开启分析数据缓存
-#orm_log = false			#是否sql日志
-#domain = []				#邮件域名可可配置多个 示例: ["example1.com","example2.com"]
-#admin = ""				#管理员的邮箱	示例: admin@example.com
-#jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串
+ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
+analysis_cache = false			#是否开启分析数据缓存
+orm_log = false			#是否sql日志
+domain = ["mail.alanlo.org"]				#邮件域名可可配置多个 示例: ["example1.com","example2.com"]
+admin = "admin@alanlo.org"				#管理员的邮箱	示例: admin@example.com
+#jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串（勿提交明文；线上靠 keep_vars 保留）
 
 [build]
 command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
