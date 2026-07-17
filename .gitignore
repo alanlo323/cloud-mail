@@ -27,3 +27,4 @@ mail-vue/dist
 .venv
 .omc/*
 package-lock.josn
+.cursor/*
