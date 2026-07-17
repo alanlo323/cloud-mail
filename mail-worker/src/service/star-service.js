@@ -4,7 +4,7 @@ import emailService from './email-service';
 import BizError from '../error/biz-error';
 import { and, desc, eq, lt, sql, inArray } from 'drizzle-orm';
 import email from '../entity/email';
-import { isDel } from '../const/entity-const';
+import { isDel, emailConst } from '../const/entity-const';
 import attService from "./att-service";
 import { t } from '../i18n/i18n'
 const starService = {
@@ -59,6 +59,7 @@ const starService = {
 				and(
 					eq(star.userId, userId),
 					eq(email.isDel, isDel.NORMAL),
+					eq(email.isSpam, emailConst.spam.NORMAL),
 					lt(star.emailId, emailId)))
 			.orderBy(desc(star.emailId))
 			.limit(size)

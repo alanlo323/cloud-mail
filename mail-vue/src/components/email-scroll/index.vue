@@ -18,6 +18,12 @@
         <Icon v-perm="'email:delete'" class="icon delete" icon="fluent:mail-read-20-regular" width="21" height="21"
               v-if="getSelectedMailsIds().length > 0 && showUnread"
               @click="handleRead"/>
+        <Icon class="icon delete" icon="mdi:email-alert-outline" width="20" height="20"
+              v-if="getSelectedMailsIds().length > 0 && showMarkSpam"
+              @click="handleMarkSpam"/>
+        <Icon class="icon delete" icon="mdi:email-check-outline" width="20" height="20"
+              v-if="getSelectedMailsIds().length > 0 && showRestoreSpam"
+              @click="handleRestoreSpam"/>
       </div>
 
       <div class="header-right">
@@ -195,6 +201,22 @@
               </div>
             </template>
           </el-dropdown-item>
+          <el-dropdown-item v-if="showMarkSpam && ['email'].includes(props.type)" @click="markSpamOne(rightClickEmail.emailId)">
+            <template #default>
+              <div class="right-dropdown-item">
+                <Icon icon="mdi:email-alert-outline" width="19" height="19"/>
+                <span>{{t('markAsSpam')}}</span>
+              </div>
+            </template>
+          </el-dropdown-item>
+          <el-dropdown-item v-if="showRestoreSpam" @click="restoreSpamOne(rightClickEmail.emailId)">
+            <template #default>
+              <div class="right-dropdown-item">
+                <Icon icon="mdi:email-check-outline" width="19" height="19"/>
+                <span>{{t('notSpam')}}</span>
+              </div>
+            </template>
+          </el-dropdown-item>
           <el-dropdown-item v-if="props.type === 'all-email'" @click="handleSearch('user', rightClickEmail.userEmail)">
             <template #default>
               <div class="right-dropdown-item">
@@ -292,6 +314,16 @@ const props = defineProps({
     default: true
   },
   showUnread: {
+    type: Boolean,
+    default: false
+  },
+  emailMarkSpam: Function,
+  emailRestoreSpam: Function,
+  showMarkSpam: {
+    type: Boolean,
+    default: false
+  },
+  showRestoreSpam: {
     type: Boolean,
     default: false
   }
@@ -619,6 +651,105 @@ const handleRead = () => {
   localRead(emailIds);
 }
 
+async function openMarkSpamDialog(emailIds) {
+  let blockSender = true
+  try {
+    await ElMessageBox.confirm(
+      `<div style="margin-bottom:8px">${t('markAsSpamConfirm', { count: emailIds.length })}</div>
+       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+         <input id="spam-block-sender" type="checkbox" checked />
+         <span>${t('blockSenderAlso')}</span>
+       </label>
+       <div style="margin-top:8px;color:#909399;font-size:12px">${t('spamBlockHint')}</div>`,
+      t('markAsSpam'),
+      {
+        confirmButtonText: t('confirm'),
+        cancelButtonText: t('cancel'),
+        type: 'warning',
+        dangerouslyUseHTMLString: true,
+        beforeClose: (action, instance, done) => {
+          if (action === 'confirm') {
+            const el = document.getElementById('spam-block-sender')
+            blockSender = !!(el && el.checked)
+          }
+          done()
+        }
+      }
+    )
+  } catch {
+    return
+  }
+  try {
+    await props.emailMarkSpam(emailIds, blockSender)
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  ElMessage({ message: t('markSpamSuccess'), type: 'success', plain: true })
+  const marked = emailIds.map(id => emailList.find(e => e.emailId === id)).filter(Boolean)
+  // Remove from current list and keep-alive peers (inbox/star); do not rely on deleteIds alone for spam insert
+  deleteEmail(emailIds)
+  emailStore.starScroll?.deleteEmail?.(emailIds)
+  emailStore.deleteIds = emailIds
+  marked.forEach(email => {
+    email.isSpam = 1
+    emailStore.spamScroll?.addItem?.(email)
+  })
+}
+
+function handleMarkSpam() {
+  const emailIds = getSelectedMailsIds()
+  if (!emailIds.length || !props.emailMarkSpam) return
+  openMarkSpamDialog(emailIds).catch(e => console.error(e))
+}
+
+function markSpamOne(emailId) {
+  if (!props.emailMarkSpam) return
+  openMarkSpamDialog([emailId]).catch(e => console.error(e))
+}
+
+function handleRestoreSpam() {
+  const emailIds = getSelectedMailsIds()
+  if (!emailIds.length || !props.emailRestoreSpam) return
+  handleRestoreSpamIds(emailIds).catch(e => console.error(e))
+}
+
+function restoreSpamOne(emailId) {
+  if (!props.emailRestoreSpam) return
+  handleRestoreSpamIds([emailId]).catch(e => console.error(e))
+}
+
+async function handleRestoreSpamIds(emailIds) {
+  try {
+    await ElMessageBox.confirm(`${t('restoreSpamConfirm')}\n${t('restoreSpamRuleHint')}`, {
+      confirmButtonText: t('confirm'),
+      cancelButtonText: t('cancel'),
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await props.emailRestoreSpam(emailIds)
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  ElMessage({ message: t('restoreSpamSuccess'), type: 'success', plain: true })
+  const restored = emailIds.map(id => emailList.find(e => e.emailId === id)).filter(Boolean)
+  // Explicit keep-alive sync only — do not set deleteIds after addItem (watch would wipe inbox)
+  deleteEmail(emailIds)
+  emailStore.spamScroll?.deleteEmail?.(emailIds)
+  restored.forEach(email => {
+    email.isSpam = 0
+    emailStore.emailScroll?.addItem?.(email)
+    // Mark-as-spam removed from star keep-alive; re-add when still starred
+    if (email.isStar) {
+      emailStore.starScroll?.addItem?.(email)
+    }
+  })
+}
+
 function emailRead(emailId) {
   props.emailRead([emailId])
   localRead([emailId]);
@@ -732,7 +863,7 @@ function addItem(email) {
   }
 
   email.formatText = htmlToText(email);
-  email.formatCreateTime = fromNow(email.formatCreateTime);
+  email.formatCreateTime = fromNow(email.createTime || email.formatCreateTime);
 
   if (props.timeSort) {
     if (noLoading.value) {

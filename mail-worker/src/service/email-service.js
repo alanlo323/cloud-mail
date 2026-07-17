@@ -22,12 +22,17 @@ import domainUtils from '../utils/domain-uitls';
 import account from "../entity/account";
 import { att } from '../entity/att';
 import telegramService from './telegram-service';
+import userSenderRuleService from './user-sender-rule-service';
+import { spamFlagFromParams, shouldBlockSender, normalizeEmailIds, priorSpamSendersFromRows } from '../utils/spam-utils';
 
 const emailService = {
+
+	spamFlagFromParams,
 
 	async list(c, params, userId) {
 
 		let { emailId, type, accountId, size, timeSort, allReceive } = params;
+		const spamFlag = spamFlagFromParams(params);
 
 		size = Number(size);
 		emailId = Number(emailId);
@@ -77,6 +82,7 @@ const emailService = {
 					timeSort ? gt(email.emailId, emailId) : lt(email.emailId, emailId),
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
+					eq(email.isSpam, spamFlag),
 					eq(account.isDel, isDel.NORMAL)
 				)
 			);
@@ -100,6 +106,7 @@ const emailService = {
 					eq(email.userId, userId),
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
+					eq(email.isSpam, spamFlag),
 					eq(account.isDel, isDel.NORMAL)
 				)
 		).get();
@@ -109,7 +116,8 @@ const emailService = {
 				allReceive ? eq(1,1) : eq(email.accountId, accountId),
 				eq(email.userId, userId),
 				eq(email.type, type),
-				eq(email.isDel, isDel.NORMAL)
+				eq(email.isDel, isDel.NORMAL),
+				eq(email.isSpam, spamFlag)
 			))
 			.orderBy(desc(email.emailId)).limit(1).get();
 
@@ -575,6 +583,7 @@ const emailService = {
 				emailValues.accountId = accountRow.accountId;
 				emailValues.type = emailConst.type.RECEIVE;
 				emailValues.status = emailConst.status.RECEIVE;
+				emailValues.isSpam = emailConst.spam.NORMAL;
 
 				const roleRow = roleList.find(roleRow => roleRow.userId === accountRow.userId);
 
@@ -591,6 +600,14 @@ const emailService = {
 						emailValues.message = `The recipient <${email}> is disabled from receiving emails.`;
 					}
 
+				}
+
+				if (emailValues.status === emailConst.status.RECEIVE && emailValues.userId > 0) {
+					const isSpamMatch = await userSenderRuleService.match(c, emailValues.userId, sendEmailData.sendEmail);
+					if (isSpamMatch) {
+						emailValues.isSpam = emailConst.spam.SPAM;
+						console.info(`auto-spam route userId=${emailValues.userId} from=${sendEmailData.sendEmail}`);
+					}
 				}
 
 				emailDataList.push(emailValues);
@@ -703,6 +720,7 @@ const emailService = {
 	async latest(c, params, userId) {
 		let { emailId, accountId, allReceive } = params;
 		allReceive = Number(allReceive);
+		const spamFlag = spamFlagFromParams(params);
 
 		if (isNaN(allReceive)) {
 			let accountRow = await accountService.selectById(c, accountId);
@@ -719,6 +737,7 @@ const emailService = {
 					gt(email.emailId, emailId),
 					eq(email.userId, userId),
 					eq(email.isDel, isDel.NORMAL),
+					eq(email.isSpam, spamFlag),
 					eq(account.isDel, isDel.NORMAL),
 					allReceive ? eq(1,1) : eq(email.accountId, accountId),
 					eq(email.type, emailConst.type.RECEIVE)
@@ -741,6 +760,7 @@ const emailService = {
 
 	async physicsDeleteUserIds(c, userIds) {
 		await attService.removeByUserIds(c, userIds);
+		await userSenderRuleService.removeByUserIds(c, userIds);
 		await orm(c).delete(email).where(inArray(email.userId, userIds)).run();
 	},
 
@@ -986,6 +1006,86 @@ const emailService = {
 	async read(c, params, userId) {
 		const { emailIds } = params;
 		await orm(c).update(email).set({ unread: emailConst.unread.READ }).where(and(eq(email.userId, userId), inArray(email.emailId, emailIds)));
+	},
+
+	async markSpam(c, params, userId) {
+		let { emailIds, blockSender } = params;
+		const requestedIds = normalizeEmailIds(emailIds);
+		if (!requestedIds.length) {
+			throw new BizError(t('spamInvalidIds'), 400);
+		}
+
+		const rows = await orm(c).select({
+			emailId: email.emailId,
+			type: email.type,
+			sendEmail: email.sendEmail,
+			isSpam: email.isSpam
+		}).from(email).where(
+			and(
+				eq(email.userId, userId),
+				eq(email.isDel, isDel.NORMAL),
+				inArray(email.emailId, requestedIds)
+			)
+		).all();
+
+		if (rows.length !== requestedIds.length) {
+			throw new BizError(t('spamNotOwned'), 400);
+		}
+		if (rows.some(row => row.type !== emailConst.type.RECEIVE)) {
+			throw new BizError(t('spamReceiveOnly'), 400);
+		}
+
+		await orm(c).update(email).set({ isSpam: emailConst.spam.SPAM }).where(
+			and(
+				eq(email.userId, userId),
+				eq(email.isDel, isDel.NORMAL),
+				inArray(email.emailId, requestedIds)
+			)
+		).run();
+
+		if (shouldBlockSender(blockSender)) {
+			const senders = rows.map(row => row.sendEmail);
+			await userSenderRuleService.upsert(c, userId, senders);
+		}
+	},
+
+	async restoreSpam(c, params, userId) {
+		let { emailIds } = params;
+		const requestedIds = normalizeEmailIds(emailIds);
+		if (!requestedIds.length) {
+			throw new BizError(t('spamInvalidIds'), 400);
+		}
+
+		const rows = await orm(c).select({
+			emailId: email.emailId,
+			type: email.type,
+			sendEmail: email.sendEmail,
+			isSpam: email.isSpam
+		}).from(email).where(
+			and(
+				eq(email.userId, userId),
+				eq(email.isDel, isDel.NORMAL),
+				inArray(email.emailId, requestedIds)
+			)
+		).all();
+
+		if (rows.length !== requestedIds.length) {
+			throw new BizError(t('spamNotOwned'), 400);
+		}
+		if (rows.some(row => row.type !== emailConst.type.RECEIVE)) {
+			throw new BizError(t('spamReceiveOnly'), 400);
+		}
+
+		await orm(c).update(email).set({ isSpam: emailConst.spam.NORMAL }).where(
+			and(
+				eq(email.userId, userId),
+				eq(email.isDel, isDel.NORMAL),
+				inArray(email.emailId, requestedIds)
+			)
+		).run();
+
+		const priorSpamSenders = priorSpamSendersFromRows(rows);
+		await userSenderRuleService.removeByUserAndSenders(c, userId, priorSpamSenders);
 	}
 };
 

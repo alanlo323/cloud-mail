@@ -11,6 +11,7 @@ import roleService from '../service/role-service';
 import userService from '../service/user-service';
 import telegramService from '../service/telegram-service';
 import aiService from '../service/ai-service';
+import userSenderRuleService from '../service/user-sender-rule-service';
 
 export async function email(message, env, ctx) {
 
@@ -94,6 +95,13 @@ export async function email(message, env, ctx) {
 		const toName = email.to.find(item => item.address === message.to)?.name || '';
 		const code = await aiService.extractCode({ env }, email, { aiCode, aiCodeFilter });
 
+		const userId = account ? account.userId : 0;
+		let isSpam = emailConst.spam.NORMAL;
+		if (userId > 0 && await userSenderRuleService.match({ env }, userId, email.from.address)) {
+			isSpam = emailConst.spam.SPAM;
+			console.info(`auto-spam route userId=${userId} from=${email.from.address}`);
+		}
+
 		const params = {
 			toEmail: message.to,
 			toName: toName,
@@ -109,10 +117,11 @@ export async function email(message, env, ctx) {
 			inReplyTo: email.inReplyTo,
 			relation: email.references,
 			messageId: email.messageId,
-			userId: account ? account.userId : 0,
+			userId,
 			accountId: account ? account.accountId : 0,
 			isDel: isDel.DELETE,
-			status: emailConst.status.SAVING
+			status: emailConst.status.SAVING,
+			isSpam
 		};
 
 		const attachments = [];

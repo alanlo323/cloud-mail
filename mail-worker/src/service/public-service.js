@@ -10,7 +10,7 @@ import verifyUtils from '../utils/verify-utils';
 import { t } from '../i18n/i18n';
 import reqUtils from '../utils/req-utils';
 import dayjs from 'dayjs';
-import { isDel, roleConst } from '../const/entity-const';
+import { isDel, roleConst, emailConst } from '../const/entity-const';
 import email from '../entity/email';
 import userService from './user-service';
 import KvConst from '../const/kv-const';
@@ -77,6 +77,8 @@ const publicService = {
 		if (isDel || isDel === 0) {
 			conditions.push(eq(email.isDel, isDel))
 		}
+
+		conditions.push(eq(email.isSpam, emailConst.spam.NORMAL))
 
 		if (conditions.length === 1) {
 			query.where(...conditions)

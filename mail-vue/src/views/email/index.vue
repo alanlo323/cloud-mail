@@ -9,6 +9,8 @@
                :time-sort="params.timeSort"
                :email-read="emailRead"
                :show-unread="true"
+               :email-mark-spam="emailMarkSpam"
+               :show-mark-spam="true"
                actionLeft="4px"
                @jump="jumpContent"
   >
@@ -27,7 +29,7 @@ import {useAccountStore} from "@/store/account.js";
 import {useEmailStore} from "@/store/email.js";
 import {useSettingStore} from "@/store/setting.js";
 import emailScroll from "@/components/email-scroll/index.vue"
-import {emailList, emailDelete, emailLatest, emailRead} from "@/request/email.js";
+import {emailList, emailDelete, emailLatest, emailRead, emailMarkSpam} from "@/request/email.js";
 import {starAdd, starCancel} from "@/request/star.js";
 import {defineOptions, h, onMounted, reactive, ref, watch} from "vue";
 import {sleep} from "@/utils/time-utils.js";
@@ -69,6 +71,8 @@ function jumpContent(email) {
   emailStore.contentData.showUnread = true
   emailStore.contentData.showStar = true
   emailStore.contentData.showReply = true
+  emailStore.contentData.showMarkSpam = true
+  emailStore.contentData.showRestoreSpam = false
   router.push('/message')
 }
 

@@ -29,8 +29,40 @@ const dbInit = {
 		await this.v2_8DB(c);
 		await this.v2_9DB(c);
 		await this.v3_0DB(c);
+		await this.v3_1DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v3_1DB(c) {
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`ALTER TABLE email ADD COLUMN is_spam integer NOT NULL DEFAULT 0;`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS user_sender_rule (
+					rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					send_email TEXT NOT NULL,
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+				);`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sender_rule_user_send ON user_sender_rule(user_id, send_email);`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v3_0DB(c) {

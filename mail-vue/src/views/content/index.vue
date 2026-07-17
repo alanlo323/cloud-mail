@@ -3,6 +3,8 @@
     <div class="header-actions">
       <Icon class="icon" icon="material-symbols-light:arrow-back-ios-new" width="20" height="20" @click="handleBack"/>
       <Icon v-perm="'email:delete'" class="icon" icon="uiw:delete" width="16" height="16" @click="handleDelete"/>
+      <Icon class="icon" v-if="emailStore.contentData.showMarkSpam" icon="mdi:email-alert-outline" width="20" height="20" @click="handleMarkSpam"/>
+      <Icon class="icon" v-if="emailStore.contentData.showRestoreSpam" icon="mdi:email-check-outline" width="20" height="20" @click="handleRestoreSpam"/>
       <span class="star" v-if="emailStore.contentData.showStar">
         <Icon class="icon" @click="changeStar" v-if="email.isStar" icon="fluent-color:star-16" width="20" height="20"/>
         <Icon class="icon" @click="changeStar" v-else icon="solar:star-line-duotone" width="18" height="18"/>
@@ -78,7 +80,7 @@ import ShadowHtml from '@/components/shadow-html/index.vue'
 import {reactive, ref, watch, onMounted, onUnmounted} from "vue";
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {emailDelete, emailRead} from "@/request/email.js";
+import {emailDelete, emailRead, emailMarkSpam, emailRestoreSpam} from "@/request/email.js";
 import {Icon} from "@iconify/vue";
 import {useEmailStore} from "@/store/email.js";
 import {useAccountStore} from "@/store/account.js";
@@ -180,6 +182,75 @@ function changeStar() {
 }
 
 const handleBack = () => {
+  router.back()
+}
+
+async function handleMarkSpam() {
+  let blockSender = true
+  try {
+    await ElMessageBox.confirm(
+      `<div style="margin-bottom:8px">${t('markAsSpamConfirm', { count: 1 })}</div>
+       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+         <input id="spam-block-sender-detail" type="checkbox" checked />
+         <span>${t('blockSenderAlso')}</span>
+       </label>
+       <div style="margin-top:8px;color:#909399;font-size:12px">${t('spamBlockHint')}</div>`,
+      t('markAsSpam'),
+      {
+        confirmButtonText: t('confirm'),
+        cancelButtonText: t('cancel'),
+        type: 'warning',
+        dangerouslyUseHTMLString: true,
+        beforeClose: (action, instance, done) => {
+          if (action === 'confirm') {
+            const el = document.getElementById('spam-block-sender-detail')
+            blockSender = !!(el && el.checked)
+          }
+          done()
+        }
+      }
+    )
+  } catch {
+    return
+  }
+  try {
+    await emailMarkSpam([email.emailId], blockSender)
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  ElMessage({ message: t('markSpamSuccess'), type: 'success', plain: true })
+  email.isSpam = 1
+  emailStore.deleteIds = [email.emailId]
+  emailStore.starScroll?.deleteEmail?.([email.emailId])
+  emailStore.spamScroll?.addItem?.(email)
+  router.back()
+}
+
+async function handleRestoreSpam() {
+  try {
+    await ElMessageBox.confirm(`${t('restoreSpamConfirm')}\n${t('restoreSpamRuleHint')}`, {
+      confirmButtonText: t('confirm'),
+      cancelButtonText: t('cancel'),
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await emailRestoreSpam([email.emailId])
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  ElMessage({ message: t('restoreSpamSuccess'), type: 'success', plain: true })
+  email.isSpam = 0
+  emailStore.spamScroll?.deleteEmail?.([email.emailId])
+  emailStore.emailScroll?.addItem?.(email)
+  // Mark-as-spam removed from star keep-alive; re-add when still starred
+  if (email.isStar) {
+    emailStore.starScroll?.addItem?.(email)
+  }
   router.back()
 }
 
