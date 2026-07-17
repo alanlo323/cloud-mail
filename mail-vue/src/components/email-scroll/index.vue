@@ -44,13 +44,12 @@
                         :key="keyCount"
         >
           <template #default="{ data: item, index }" >
-            <div :class="'email-row ' + props.type"
+            <div :class="['email-row', props.type, { 'right-checked': item.rightChecked }]"
                  :data-checked="item.checked"
                  @click="jumpDetails(item)"
                  v-if="!item.expand"
                  :key="item.emailId"
                  @contextmenu="handleContextmenu($event, item)"
-                 :style="item.rightChecked ? 'background: #FDF6EC' : ''"
             >
               <el-checkbox :class=" props.type === 'all-email' ? 'all-email-checkbox' : 'checkbox'"
                            v-model="item.checked" @click.stop></el-checkbox>
@@ -1366,6 +1365,11 @@ function loadData() {
   &:hover {
     background-color: var(--email-hover-background);
     z-index: 0;
+  }
+
+  &.right-checked,
+  &.right-checked:hover {
+    background-color: var(--el-color-warning-light-9);
   }
 
   /*&[data-checked="true"] {
